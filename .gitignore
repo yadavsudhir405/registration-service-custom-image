@@ -7,3 +7,7 @@ api/.mvn/
 api/HELP.md
 api/mvnw
 api/mvnw.cmd
+service/.mvn/
+service/HELP.md
+service/mvnw
+service/mvnw.cmd
