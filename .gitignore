@@ -3,3 +3,7 @@
 target
 *.iml
 out
+api/.mvn/
+api/HELP.md
+api/mvnw
+api/mvnw.cmd
