@@ -11,3 +11,4 @@ service/.mvn/
 service/HELP.md
 service/mvnw
 service/mvnw.cmd
+.gradle
