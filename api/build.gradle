@@ -4,6 +4,7 @@ plugins {
 
 description = 'api'
 
+
 bootJar {
      mainClassName = 'com.sudhir.registration.api.ApiApplication'
 }
