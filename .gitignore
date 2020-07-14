@@ -12,3 +12,5 @@ service/HELP.md
 service/mvnw
 service/mvnw.cmd
 .gradle
+.DS_Store
+build

@@ -1,48 +1,119 @@
-import org.springframework.boot.gradle.plugin.SpringBootPlugin
-
-//buildscript {
-//    repositories {
-//        jcenter()
-//    }
-//
-//    dependencies {
-//        classpath 'io.spring.dependency-management' version '1.0.9.RELEASE'
-//    }
-//}
-
 plugins {
-    id 'org.springframework.boot' version '2.3.1.RELEASE' apply false
-    id 'io.spring.dependency-management' version '1.0.9.RELEASE' apply false
+    id 'java'
+    id 'org.springframework.boot' version '2.3.1.RELEASE'
+    id 'io.spring.dependency-management' version '1.0.9.RELEASE'
+    id "org.beryx.jlink" version "2.21.0"
+    id "org.javamodularity.moduleplugin" version "1.6.0"
 }
-allprojects {
-    version = "1.0"
+
+repositories {
+    gradlePluginPortal()
+    jcenter()
 }
 
-subprojects {
-    apply plugin: 'java'
-    apply plugin: 'io.spring.dependency-management'
+sourceCompatibility = JavaVersion.VERSION_14
+targetCompatibility = JavaVersion.VERSION_14
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
 
-    plugins.withType(JavaPlugin).configureEach {
-        java {
-            modularity.inferModulePath = true
-        }
-    }
-
-    repositories {
-        jcenter()
-    }
-
-    dependencyManagement {
-        imports {
-            mavenBom SpringBootPlugin.BOM_COORDINATES
-        }
-    }
-
-    dependencies {
-        testImplementation('org.springframework.boot:spring-boot-starter-test') {
-            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
-        }
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
     }
 }
 
+jar {
+    enabled = true;
+}
+application{
+    mainModule='com.sudhir.registration'
+}
+
+configurations {
+    springFactoriesHolder { transitive = false }
+}
+
+dependencies {
+    springFactoriesHolder 'org.springframework.boot:spring-boot-actuator-autoconfigure'
+    springFactoriesHolder 'org.springframework.boot:spring-boot-autoconfigure'
+    springFactoriesHolder 'org.springframework.boot:spring-boot'
+
+    implementation 'org.springframework.boot:spring-boot'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    testImplementation('org.springframework.boot:spring-boot-starter-test') {
+        exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+    }
+}
+
+mainClassName = "com.sudhir.registration.ApiApplication"
+
+
+prepareMergedJarsDir.doLast {
+    // extract and merge META-INF/spring.factories from springFactoriesHolder
+    def factories = configurations.springFactoriesHolder.files.collect {
+        def props = new Properties()
+        props.load(zipTree(it).matching { include 'META-INF/spring.factories' }.singleFile.newInputStream())
+        props
+    }
+    def mergedProps = new Properties()
+    factories.each { props ->
+        props.each { key, value ->
+            def oldVal = mergedProps[key]
+            mergedProps[key] = oldVal ? "$oldVal,$value" : value
+        }
+    }
+    def content = mergedProps.collect { key, value ->
+        def v = (value as String).replace(',', ',\\\n')
+        "$key=$v"
+    }.join('\n\n')
+    mkdir("$jlinkBasePath/META-INF")
+    new File("$jlinkBasePath/META-INF/spring.factories").text = content
+
+    // insert META-INF/spring.factories into the main jar
+    ant.zip(update: "true", destfile: jar.archivePath, keepcompression: true) {
+        fileset(dir: "$jlinkBasePath", includes: 'META-INF/**')
+    }
+}
+
+jlink {
+    imageZip = file("$buildDir/image-zip/registration-service-image.zip")
+    options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
+    forceMerge 'jaxb-api', 'byte-buddy', 'classgraph'
+    mergedModule {
+
+        uses 'ch.qos.logback.classic.spi.Configurator'
+
+        excludeRequires 'com.fasterxml.jackson.module.paramnames'
+        excludeProvides implementation: 'com.sun.xml.bind.v2.ContextFactory'
+        excludeProvides servicePattern: 'javax.enterprise.inject.*'
+        excludeProvides service: 'org.apache.logging.log4j.spi.Provider'
+        excludeProvides servicePattern: 'reactor.blockhound.integration.*'
+    }
+    launcher {
+        name = 'run'
+        jvmArgs = [
+                '--add-reads', 'registration.service.merged.module=com.sudhir.registration',
+                '-cp', 'config/',
+        ]
+    }
+}
+
+tasks.jlink.doLast {
+    // Spring performs its magic by scanning the classpath, but in a modular application the classpath is replaced by the module-path.
+    // To circumvent this problem, we copy all resources into the 'config' directory and set this directory as classpath.
+    copy {
+        from "src/main/resources"
+        into "$imageDir.asFile/bin/config"
+    }
+
+    // Spring also needs to read the .class files, therefore they should be accessible via classpath.
+    // Note: These .class files are only used as resources, they will not be loaded by a classloader.
+    copy {
+        from "$buildDir/classes/java/main/com/sudhir/registration"
+        into "$imageDir.asFile/bin/config/com/sudhir/registration/for-spring-classpath-scanner"
+    }
+}
 
